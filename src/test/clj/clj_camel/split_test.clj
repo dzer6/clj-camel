@@ -10,7 +10,11 @@
 (defn processor1 [_] {:body "before"})
 
 (deftest split-route-test
-  (is (= (-> (c/route-builder (c/from "direct:test")
+  (is (= (-> "split.xml"
+             (io/resource)
+             (io/input-stream)
+             (xml/parse))
+         (-> (c/route-builder (c/from "direct:test")
                               (c/route-id "test-route")
                               (c/process processor1)
                               (c/to "http://test-http" {:id "http"})
@@ -26,8 +30,4 @@
              (cu/dump-route-to-xml)
              (test-utils/str->input-stream)
              (xml/parse)
-             (test-utils/remove-expression-definition))
-         (-> "split.xml"
-             (io/resource)
-             (io/input-stream)
-             (xml/parse)))))
+             (test-utils/remove-expression-definition)))))

@@ -11,7 +11,7 @@
   (:import (org.apache.camel.model RouteDefinition ProcessorDefinition ChoiceDefinition SplitDefinition)
            (org.apache.camel Exchange Processor Predicate Expression CamelContext NamedNode AggregationStrategy TypeConverter ProducerTemplate LoggingLevel ConsumerTemplate)
            (org.apache.camel.impl DefaultCamelContext)
-           (org.apache.camel.builder DeadLetterChannelBuilder RouteBuilder SimpleBuilder Builder ValueBuilder AggregationStrategies)
+           (org.apache.camel.builder DeadLetterChannelBuilder RouteBuilder Builder ValueBuilder AggregationStrategies)
            (clojure.lang ExceptionInfo)
            (org.apache.camel.model.language JsonPathExpression)
            (org.apache.camel.spi HeaderFilterStrategy IdempotentRepository)
@@ -199,7 +199,7 @@
   "Creates simple expression
   eg. (c/idempotent-consumer (c/simple '${body}') (c/create-memory-idempotent-repository))"
   [text]
-  (SimpleBuilder/simple text))
+  (Builder/simple text))
 
 (defn constant
   "Creates constant expression
@@ -507,7 +507,7 @@
   (log/warn "------------------------------------------"))
 
 (defn debug-exchange [& [^ProcessorDefinition pd]]
-  (let [^Processor processor (processor-ex debug-exchange-log)] ; TODO try to use simple proccessor
+  (let [^Processor processor (processor-ex debug-exchange-log)] ; TODO try to use simple processor
     (.process pd processor)))
 
 (defmacro type-converter
