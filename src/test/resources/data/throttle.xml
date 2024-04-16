@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <routes xmlns="http://camel.apache.org/schema/spring">
     <route id="1">
-        <from uri="direct:test"/>
+        <from id="1" uri="direct:test"/>
         <setBody id="1">
             <constant>test</constant>
         </setBody>
-        <throttle asyncDelayed="false" id="1" timePeriodMillis="10000" rejectExecution="false">
+        <throttle asyncDelayed="false" id="1" timePeriodMillis="10000" rejectExecution="false" mode="TotalRequests">
             <expressionDefinition>20</expressionDefinition>
         </throttle>
         <log id="1" message="after throttling"/>

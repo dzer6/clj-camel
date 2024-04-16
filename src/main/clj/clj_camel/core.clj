@@ -1,25 +1,28 @@
 (ns clj-camel.core
   (:refer-clojure :rename {memoize core-memoize
                            filter  core-filter
-                           when    core-when})
-  (:require [clojure.tools.logging :as log]
-            [clojure.string :as string]
-            [clojure.walk :as w]
-            [lazy-map.core :refer [lazy-map]]
+                           when    core-when
+                           delay   core-delay})
+  (:require [clj-camel.camel-map-wrapper :refer [camel-map]]
             [clj-camel.headers :refer [dict]]
-            [clj-camel.camel-map-wrapper :refer [camel-map]])
-  (:import (org.apache.camel.model RouteDefinition ProcessorDefinition ChoiceDefinition SplitDefinition)
-           (org.apache.camel Exchange Processor Predicate Expression CamelContext NamedNode AggregationStrategy TypeConverter ProducerTemplate LoggingLevel ConsumerTemplate)
-           (org.apache.camel.impl DefaultCamelContext)
-           (org.apache.camel.builder DeadLetterChannelBuilder RouteBuilder SimpleBuilder Builder ValueBuilder AggregationStrategies)
+            [defun.core :refer [defun]]
+            [clojure.string :as string]
+            [clojure.tools.logging :as log]
+            [clojure.walk :as w]
+            [lazy-map.core :refer [lazy-map]])
+  (:import (java.util.concurrent Executors TimeUnit)
+           (org.apache.camel.model ChoiceDefinition ProcessorDefinition RouteDefinition)
            (clojure.lang ExceptionInfo)
-           (org.apache.camel.model.language JsonPathExpression)
-           (org.apache.camel.spi HeaderFilterStrategy IdempotentRepository)
            (java.util Map)
-           (org.apache.camel.model ThrottleDefinition SplitDefinition AggregateDefinition ExpressionNode TryDefinition DataFormatDefinition OnCompletionDefinition)
-           (org.apache.camel.component.jcache.policy JCachePolicy)
            (javax.sql DataSource)
-           (org.apache.camel.processor.idempotent.jdbc JdbcMessageIdRepository)
+           (org.apache.camel AggregationStrategy CamelContext ConsumerTemplate Endpoint Exchange Expression LoggingLevel NamedNode Predicate Processor ProducerTemplate TypeConverter)
+           (org.apache.camel.builder AdviceWith AdviceWithRouteBuilder AggregationStrategies Builder DeadLetterChannelBuilder EndpointConsumerBuilder EndpointProducerBuilder RouteBuilder ValueBuilder)
+           (org.apache.camel.component.jcache.policy JCachePolicy)
+           (org.apache.camel.impl DefaultCamelContext)
+           (org.apache.camel.model DataFormatDefinition ModelCamelContext OnCompletionDefinition TryDefinition)
+           (org.apache.camel.model.language JsonPathExpression)
+           (org.apache.camel.processor.idempotent.jdbc JdbcMessageIdRepository JdbcOrphanLockAwareIdempotentRepository)
+           (org.apache.camel.spi HeaderFilterStrategy)
            (org.apache.camel.support.processor.idempotent MemoryIdempotentRepository)))
 
 (def grouped-exchange-strategy (AggregationStrategies/groupedExchange))
@@ -35,22 +38,31 @@
      (configure []
        (-> ~'this ~@body))))
 
-(defn from
+(declare from)
+
+(defun from
   "Creates a new route from the given URI input"
-  [^RouteBuilder r & [^String uri]]
-  (.from r uri))
+  ([^RouteBuilder r (uri :guard (partial instance? String))]
+   (.from r ^String uri))
+  ([^RouteBuilder r (builder :guard (partial instance? EndpointConsumerBuilder))]
+   (.from r ^EndpointConsumerBuilder builder)))
 
 (defn route-id
   "Set the route id for this route"
   [^RouteDefinition rd & [^String id]]
   (.routeId rd id))
 
-(defn to
+(declare to)
+
+(defun to
   "Sends the exchange to the given endpoint"
-  [^RouteDefinition rd & [^String uri {:keys [id]}]]
-  (if id
-    (.id (.to rd uri) id)
-    (.to rd uri)))
+  ([^RouteDefinition rd (uri :guard (partial instance? String))]
+   (.to rd ^String uri))
+  ([^RouteDefinition rd (uri :guard (partial instance? String)) (params :guard map?)]
+   (.id (.to rd ^String uri)
+        (:id params)))
+  ([^RouteDefinition rd (builder :guard (partial instance? EndpointProducerBuilder))]
+   (.to rd ^EndpointProducerBuilder builder)))
 
 (defn to-d
   "Sends the exchange to the given dynamic endpoint"
@@ -199,7 +211,7 @@
   "Creates simple expression
   eg. (c/idempotent-consumer (c/simple '${body}') (c/create-memory-idempotent-repository))"
   [text]
-  (SimpleBuilder/simple text))
+  (Builder/simple text))
 
 (defn constant
   "Creates constant expression
@@ -314,10 +326,14 @@
           `(.split ~pd ~expr))
        ~@(when-let [id# (:id opts)]
            `((.id ~id#)))
+       ~@(core-when (:stop-on-exception opts)
+           `((.stopOnException)))
        ~@(core-when (:streaming opts)
            `((.streaming)))
        ~@(core-when (:parallel-processing opts)
            `((.parallelProcessing)))
+       ~@(core-when (and (:pool-size opts) (:parallel-processing opts))
+           `((.executorService (Executors/newFixedThreadPool ~(:pool-size opts)))))
        ~@(concat body `((.end)))))
 
 (defmacro filter
@@ -334,7 +350,7 @@
   ..."
   [^ProcessorDefinition pd ^Predicate predicate & body]
   `(-> (.filter ~pd ~predicate)
-       ~@(let [id# (-> body first :id)
+       ~@(let [id#   (-> body first :id)
                body# (if id# (concat `((.id ~id#)) (rest body)) body)]
            (concat body# `((.end))))))
 
@@ -400,6 +416,7 @@
   [^ProcessorDefinition pd ^Expression expression ^AggregationStrategy strategy opts & body]
   (let [{:keys [completion-size
                 completion-interval
+                completion-timeout-checker-interval
                 completion-timeout
                 parallel-processing
                 completion-from-batch-consumer
@@ -408,6 +425,7 @@
     `(-> (.aggregate ~pd ~expression ~strategy)
          ~@(core-when (some? completion-size) `((.completionSize ~completion-size)))
          ~@(core-when (some? completion-interval) `((.completionInterval ~completion-interval)))
+         ~@(core-when (some? completion-timeout-checker-interval) `((.completionTimeoutCheckerInterval ~completion-timeout-checker-interval)))
          ~@(core-when (some? completion-timeout) `((.completionTimeout ~completion-timeout)))
          ~@(core-when (some? parallel-processing) `((.parallelProcessing ~parallel-processing)))
          ~@(core-when (some? completion-from-batch-consumer) `((.completionFromBatchConsumer)))
@@ -432,7 +450,8 @@
   [^ProcessorDefinition pd ^Expression msg-id opts & body]
   (let [{:keys [repo]} opts]
     `(-> ~pd
-         (.idempotentConsumer ~msg-id ~repo)
+         (.idempotentConsumer ~msg-id)
+         (.idempotentRepository ~repo)
          ~@(concat body `((.end))))))
 
 (defmacro do-try
@@ -476,8 +495,8 @@
   (proxy [Processor] []
     (process [^Exchange ex]
       (let [^Exception e (.getProperty ex Exchange/EXCEPTION_CAUGHT ^Class Exception)
-            error-type (detect-error-type e)
-            message (.getMessage e)]
+            error-type   (detect-error-type e)
+            message      (.getMessage e)]
         (set-in-header ex :error-type error-type)
         (set-in-header ex :error-cause message)))))
 
@@ -507,7 +526,7 @@
   (log/warn "------------------------------------------"))
 
 (defn debug-exchange [& [^ProcessorDefinition pd]]
-  (let [^Processor processor (processor-ex debug-exchange-log)] ; TODO try to use simple proccessor
+  (let [^Processor processor (processor-ex debug-exchange-log)] ; TODO try to use simple processor
     (.process pd processor)))
 
 (defmacro type-converter
@@ -579,8 +598,12 @@
 (defmacro on-completion
   "Adds a hook that invoke this route as a callback when the
    Exchange has finished being processed."
-  [^ProcessorDefinition pd & body]
+  [^ProcessorDefinition pd opts & body]
   `(-> (.onCompletion ~pd)
+       ~@(core-when (:on-complete-only opts)
+           `((.onCompleteOnly)))
+       ~@(core-when (:on-failure-only opts)
+           `((.onFailureOnly)))
        ~@(concat body `((.end)))))
 
 (defmacro recipient-list
@@ -661,3 +684,89 @@
          ~@(core-when (some? timeout)
              `((.timeout ~timeout)))
          ~@(concat body `((.end))))))
+
+(defn stop-route [^DefaultCamelContext camel-context ^String route-id]
+  (.stopRoute camel-context route-id))
+
+(defn stop-and-remove-route
+  ([^DefaultCamelContext camel-context ^String route-id]
+   (.stopRoute camel-context route-id)
+   (.removeRoute camel-context route-id))
+  ([^DefaultCamelContext camel-context ^long timeout ^TimeUnit time-unit ^String route-id]
+   (.stopRoute camel-context route-id timeout time-unit)
+   (.removeRoute camel-context route-id)))
+
+(defmacro on-exception
+  [^ProcessorDefinition pd exceptions & body]
+  `(-> (.onException ~pd (into-array ~exceptions))
+       ~@(concat body `((.end)))))
+
+(defn create-jdbc-orphan-lock-aware-idempotent-repository
+  "Creates a new jdbc based repository"
+  [^DataSource datasource ^String processor-name ^CamelContext camel-context & [{:keys [lock-max-age-millis
+                                                                                        lock-keepalive-interval-millis]
+                                                                                 :or   {lock-max-age-millis            30000
+                                                                                        lock-keepalive-interval-millis 3000}}]]
+  (doto (JdbcOrphanLockAwareIdempotentRepository. datasource processor-name camel-context)
+    (.setLockMaxAgeMillis lock-max-age-millis)
+    (.setLockKeepAliveIntervalMillis lock-keepalive-interval-millis)
+    (.setCreateTableIfNotExists false)))
+
+(defn set-property
+  "Adds a processor which sets the property on the IN message"
+  [^ProcessorDefinition pd & [name ^Expression expr]]
+  (.setProperty pd ^String (stringify-key name) expr))
+
+(defn exchange-property [^String name]
+  (Builder/exchangeProperty name))
+
+(defmacro advice-with-route-builder
+  "Creates an AdviceWithRouteBuilder"
+  [& body]
+  `(proxy [AdviceWithRouteBuilder] []
+     (configure []
+       ~@body)))
+
+(defn route-non-initialized-error [route-id id->route-def]
+  (ex-info
+    (format "Route %s is not initialized. Available %s"
+            route-id
+            (keys id->route-def))
+    {:id            route-id
+     :available-ids (keys id->route-def)}))
+
+(defn context-route-id-to-definition-map
+  "Return route-id to route definition map."
+  [context]
+  (->> (.getRouteDefinitions context)
+       (map (juxt #(.getId %) identity))
+       (into {})))
+
+(defn mock-endpoints
+  "Mock endpoints used in **route-id** in **context** by collection of patterns.
+
+  when **skip** passed as `true`, then exchanges found not be passed to endpoints consumers.
+  when **skip** passed as `false` (default), then exchanges would reach the consumer."
+  [^DefaultCamelContext context route-id patterns & {:keys [skip]
+                                                     :or   {skip false}}]
+  (let [^AdviceWithRouteBuilder route-builder (advice-with-route-builder
+                                                (if skip
+                                                  (.mockEndpointsAndSkip this (into-array patterns))
+                                                  (.mockEndpoints this (into-array patterns))))
+        ^ModelCamelContext mcc                (-> (.getCamelContextExtension context)
+                                                  (.getContextPlugin ModelCamelContext))
+        id->route-def                         (context-route-id-to-definition-map mcc)
+        ^RouteDefinition route-def            (id->route-def route-id)]
+    (when-not route-def
+      (throw (route-non-initialized-error route-id id->route-def)))
+    (AdviceWith/adviceWith route-def mcc route-builder)))
+
+(defn mock-endpoints-and-skip
+  "Mock endpoints matching the patterns collection and do not send exchanges to them."
+  [^DefaultCamelContext context route-id patterns]
+  (mock-endpoints context route-id patterns :skip true))
+
+(defn async-request-body-and-headers
+  "Sends an asynchronous body to the given endpoint"
+  [^ProducerTemplate producer-template ^Endpoint endpoint ^Object body ^Map headers]
+  (.asyncRequestBodyAndHeaders producer-template endpoint body headers))

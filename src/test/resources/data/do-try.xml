@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <routes xmlns="http://camel.apache.org/schema/spring">
-    <route customId="true" id="1">
-        <from uri="direct:test"/>
+    <route id="1">
+        <from id="1" uri="direct:test"/>
         <doTry id="1">
             <to id="1" uri="http://test-http"/>
             <doCatch id="1">
+                <exception>java.lang.Exception</exception>
                 <log id="1" message="handle exception"/>
                 <log id="1" message="handle exception2"/>
             </doCatch>
