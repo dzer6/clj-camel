@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<routes xmlns="http://camel.apache.org/schema/spring">
+    <route id="1">
+        <from id="1" uri="direct:test"/>
+        <process id="1"/>
+        <to id="1" uri="http://test-http"/>
+        <split id="1" parallelProcessing="true" streaming="true">
+            <jsonpath>$.data.*</jsonpath>
+            <process id="1"/>
+            <filter id="1">
+                <expressionDefinition>clj_camel.core$predicate</expressionDefinition>
+                <log id="1" message="Filtered ... ${body}"/>
+                <to id="1" uri="direct:result"/>
+            </filter>
+        </split>
+        <process id="1"/>
+    </route>
+</routes>

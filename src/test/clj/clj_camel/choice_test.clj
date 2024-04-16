@@ -3,14 +3,17 @@
             [clj-camel.core :as c]
             [clj-camel.util :as cu]
             [clojure.xml :as xml]
-            [clojure.data]
             [clojure.java.io :as io]
             [clj-camel.test-utils :as test-utils]))
 
 (defn some-processor [_] {:body "processor body"})
 
 (deftest choice-test
-  (is (= (-> (c/route-builder (c/from "direct:test")
+  (is (= (-> "data/choice.xml"
+             (io/resource)
+             (io/input-stream)
+             (xml/parse))
+         (-> (c/route-builder (c/from "direct:test")
                               (c/route-id "test-route")
                               (c/choice (c/when (c/predicate (comp pos? :body))
                                                 (c/log "when 1")
@@ -26,8 +29,4 @@
              (test-utils/str->input-stream)
              (xml/parse)
              (test-utils/remove-ids)
-             (test-utils/remove-expression-definition))
-         (-> "choice.xml"
-             (io/resource)
-             (io/input-stream)
-             (xml/parse)))))
+             (test-utils/remove-expression-definition)))))

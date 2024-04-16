@@ -3,19 +3,17 @@
             [clj-camel.core :as c]
             [clj-camel.util :as cu]
             [clojure.xml :as xml]
-            [clojure.data]
             [clojure.java.io :as io]
             [clj-camel.test-utils :as test-utils]))
 
 (defn processor1 [_] {:body "before"})
 
 (deftest split-route-test
-  (is (= (-> "split.xml"
+  (is (= (-> "data/split.xml"
              (io/resource)
              (io/input-stream)
              (xml/parse))
          (-> (c/route-builder (c/from "direct:test")
-                              (c/route-id "test-route")
                               (c/process processor1)
                               (c/to "http://test-http" {:id "http"})
                               (c/split (c/json-path "$.data.*") {:agg-strategy        c/grouped-exchange-strategy
@@ -30,4 +28,5 @@
              (cu/dump-route-to-xml)
              (test-utils/str->input-stream)
              (xml/parse)
+             (test-utils/remove-ids)
              (test-utils/remove-expression-definition)))))
