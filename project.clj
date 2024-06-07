@@ -1,6 +1,6 @@
-(def camel-version "4.5.0")
+(def camel-version "4.6.0")
 
-(defproject com.dzer6/clj-camel "3.0.0"
+(defproject com.dzer6/clj-camel "3.1.0"
   :description "Clojure wrapper for Apache Camel"
   :url "https://github.com/dzer6/clj-camel"
   :license {:name "Apache License Version 2.0"

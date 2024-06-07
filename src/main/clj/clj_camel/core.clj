@@ -22,7 +22,7 @@
            (org.apache.camel.model DataFormatDefinition ModelCamelContext OnCompletionDefinition TryDefinition)
            (org.apache.camel.model.language JsonPathExpression)
            (org.apache.camel.processor.idempotent.jdbc JdbcMessageIdRepository JdbcOrphanLockAwareIdempotentRepository)
-           (org.apache.camel.spi HeaderFilterStrategy)
+           (org.apache.camel.spi HeaderFilterStrategy RoutePolicy)
            (org.apache.camel.support.processor.idempotent MemoryIdempotentRepository)))
 
 (def grouped-exchange-strategy (AggregationStrategies/groupedExchange))
@@ -594,6 +594,16 @@
   "Unmarshals the in body using the specified DataFormat"
   [^ProcessorDefinition pd & [^DataFormatDefinition data-format-definition]]
   (.unmarshal pd data-format-definition))
+
+(defn route-policy
+  "Configures route policies for the given route"
+  [^RouteDefinition rd & route-policies]
+  (.routePolicy rd (into-array RoutePolicy route-policies)))
+
+(defn auto-startup
+  "Sets the auto startup property on this route"
+  [^RouteDefinition rd ^Boolean auto-startup]
+  (.autoStartup rd auto-startup))
 
 (defmacro on-completion
   "Adds a hook that invoke this route as a callback when the

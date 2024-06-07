@@ -10,3 +10,5 @@ All notable changes to this project will be documented in this file. This change
 [2.0.1]: Added missing handlers
 [2.1.0]: Upgraded camel to 3.13.0. Removed deprecated function
 [2.2.0]: Add wire-tap, and aggregate completion-interval
+[3.0.0]: Code clean up, Apache Camel version bump to `4.5`
+[3.1.0]: Add `route-policy` and `auto-startup` Apache Camel methods wrappers, Apache Camel version bump to `4.6.0`
